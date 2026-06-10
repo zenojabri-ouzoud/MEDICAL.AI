@@ -4,3 +4,4 @@ pypdf
 pillow
 streamlit-mic-recorder
 duckduckgo-search
+google-generativeai
