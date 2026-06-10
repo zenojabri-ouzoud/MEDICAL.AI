@@ -1,59 +1,59 @@
 import streamlit as st
 from langchain_community.document_loaders import PyPDFLoader
 from langchain_openai import OpenAIEmbeddings, ChatOpenAI
-from langchain.chains import RetrievalQA
 from langchain_community.vectorstores import Chroma
+from langchain.chains import create_retrieval_chain
+from langchain.chains.combine_documents import create_stuff_documents_chain
+from langchain_core.prompts import ChatPromptTemplate
 from duckduckgo_search import DDGS
 
-# إعدادات الواجهة
-st.set_page_config(page_title="Medical AI Assistant", layout="wide")
+st.set_page_config(page_title="AI Medical Assistant", layout="wide")
 st.title("🩺 المساعد الطبي المتكامل")
 
-# 1. نظام رفع الملفات المتعددة
-st.sidebar.title("إدارة المصادر")
-uploaded_files = st.sidebar.file_uploader("ارفع الملفات الطبية (PDF):", type=["pdf"], accept_multiple_files=True)
-
-# تهيئة الذاكرة (Chat History)
+# 1. إعداد الذاكرة
 if "messages" not in st.session_state:
     st.session_state.messages = []
 
-# 2. معالجة الملفات في الخلفية
+# 2. رفع الملفات
+uploaded_files = st.sidebar.file_uploader("ارفع الملفات الطبية (PDF):", type=["pdf"], accept_multiple_files=True)
+
 if uploaded_files:
-    documents = []
-    for uploaded_file in uploaded_files:
-        with open(f"temp_{uploaded_file.name}", "wb") as f:
-            f.write(uploaded_file.getbuffer())
-        loader = PyPDFLoader(f"temp_{uploaded_file.name}")
-        documents.extend(loader.load())
+    docs = []
+    for file in uploaded_files:
+        with open(f"temp_{file.name}", "wb") as f: f.write(file.getbuffer())
+        loader = PyPDFLoader(f"temp_{file.name}")
+        docs.extend(loader.load())
     
     # تحويل الملفات لقاعدة بيانات
-    vectorstore = Chroma.from_documents(documents, OpenAIEmbeddings())
-    chain = RetrievalQA.from_chain_type(llm=ChatOpenAI(model="gpt-4"), retriever=vectorstore.as_retriever())
-    st.session_state.chain = chain
+    vectorstore = Chroma.from_documents(docs, OpenAIEmbeddings())
+    retriever = vectorstore.as_retriever()
+    llm = ChatOpenAI(model="gpt-4o")
+    
+    # إعداد الـ Chain الحديثة
+    prompt = ChatPromptTemplate.from_template("""أجب بناءً على هذه السياقات: {context}
+    سؤال المستخدم: {input}""")
+    
+    combine_docs_chain = create_stuff_documents_chain(llm, prompt)
+    st.session_state.chain = create_retrieval_chain(retriever, combine_docs_chain)
 
-# 3. واجهة المحادثة (Chat Interface)
-for message in st.session_state.messages:
-    with st.chat_message(message["role"]):
-        st.markdown(message["content"])
+# 3. واجهة المحادثة
+for msg in st.session_state.messages:
+    with st.chat_message(msg["role"]): st.markdown(msg["content"])
 
-# 4. إمكانية المحادثة والبحث
-if prompt := st.chat_input("اسألني عن أي شيء طبي..."):
+if prompt := st.chat_input("اسألني أي سؤال طبي..."):
     st.session_state.messages.append({"role": "user", "content": prompt})
-    with st.chat_message("user"):
-        st.markdown(prompt)
+    with st.chat_message("user"): st.markdown(prompt)
 
     with st.chat_message("assistant"):
         if "chain" in st.session_state:
-            response = st.session_state.chain.invoke(prompt)
-            result = response['result']
-            st.markdown(result)
+            response = st.session_state.chain.invoke({"input": prompt})
+            ans = response["answer"]
+            st.markdown(ans)
+            st.session_state.messages.append({"role": "assistant", "content": ans})
             
-            # البحث عن صورة توضيحية تلقائياً
+            # بحث عن صورة
             with DDGS() as ddgs:
-                img_res = list(ddgs.images(prompt, max_results=1))
-                if img_res:
-                    st.image(img_res[0]['image'], caption="صورة توضيحية من الويب")
-            
-            st.session_state.messages.append({"role": "assistant", "content": result})
+                imgs = list(ddgs.images(prompt, max_results=1))
+                if imgs: st.image(imgs[0]['image'], caption="صورة توضيحية")
         else:
-            st.warning("يرجى رفع ملف طبي أولاً!")
+            st.warning("يرجى رفع ملف PDF أولاً.")
