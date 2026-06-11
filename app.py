@@ -3,7 +3,6 @@ import google.generativeai as genai
 from PyPDF2 import PdfReader
 from PIL import Image
 from streamlit_mic_recorder import mic_recorder
-from duckduckgo_search import DDGS
 
 # إعداد الواجهة
 st.set_page_config(page_title="Soufiane Medical AI", layout="wide")
@@ -14,9 +13,10 @@ api_key = st.sidebar.text_input("أدخل مفتاح Google API:", type="passwor
 
 if api_key:
     genai.configure(api_key=api_key)
-    model = genai.GenerativeModel('gemini-1.5-flash')
+    # استخدام الموديل المستقر
+    model = genai.GenerativeModel('gemini-1.0-pro')
 
-    # 2. رفع الملفات (صورة أو PDF)
+    # 2. رفع الملفات
     uploaded_file = st.file_uploader("ارفع صورة طبية أو ملف PDF:", type=["png", "jpg", "jpeg", "pdf"])
     
     # 3. تسجيل الصوت
@@ -30,7 +30,7 @@ if api_key:
         with st.chat_message(msg["role"]):
             st.markdown(msg["content"])
 
-    # معالجة المدخلات (نص، صورة، أو PDF)
+    # معالجة المدخلات
     prompt = st.chat_input("اطرح سؤالك الطبي هنا...")
     
     if prompt or uploaded_file:
@@ -41,25 +41,20 @@ if api_key:
 
         with st.chat_message("assistant"):
             try:
-                content = [user_input]
+                # معالجة الملفات (تذكير: Gemini 1.0 Pro يدعم النصوص بشكل ممتاز)
+                content = user_input
                 
-                # معالجة الصور
-                if uploaded_file and uploaded_file.type.startswith('image'):
-                    image = Image.open(uploaded_file)
-                    content.append(image)
+                if uploaded_file:
+                    if uploaded_file.type == 'application/pdf':
+                        pdf = PdfReader(uploaded_file)
+                        text = "".join([page.extract_text() for page in pdf.pages])
+                        content = f"{user_input} \n\n محتوى الملف الطبي: {text}"
+                    else:
+                        st.warning("الموديل الحالي يركز على النصوص والتقارير المكتوبة. يرجى رفع ملفات PDF.")
                 
-                # معالجة الـ PDF
-                elif uploaded_file and uploaded_file.type == 'application/pdf':
-                    pdf = PdfReader(uploaded_file)
-                    text = "".join([page.extract_text() for page in pdf.pages])
-                    content.append(f"محتوى الملف: {text}")
-
-                # البحث في الإنترنت إذا لزم الأمر (اختياري)
-                # response = model.generate_content(content)
-                
-                res = model.generate_content(content)
-                st.markdown(res.text)
-                st.session_state.messages.append({"role": "assistant", "content": res.text})
+                response = model.generate_content(content)
+                st.markdown(response.text)
+                st.session_state.messages.append({"role": "assistant", "content": response.text})
                 
             except Exception as e:
                 st.error(f"حدث خطأ: {e}")
