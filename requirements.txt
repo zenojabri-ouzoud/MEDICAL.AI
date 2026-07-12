@@ -1,5 +1,1 @@
 streamlit
-pypdf2
-pillow
-streamlit-mic-recorder
-google-generativeai>=0.7.0
